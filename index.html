@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steering Sensor Dashboard</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .dashboard {
+            text-align: center;
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .wheel-container {
+            width: 200px;
+            height: 200px;
+            border: 8px solid #00ff88;
+            border-radius: 50%;
+            margin: 20px auto;
+            position: relative;
+            transition: transform 0.05s linear; /* Rotazione fluida */
+        }
+        .wheel-line {
+            width: 8px;
+            height: 100px;
+            background: #00ff88;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        h1 { font-size: 3em; margin: 10px 0; }
+        button {
+            background: #00ff88;
+            color: #121212;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.2em;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            font-weight: bold;
+        }
+        button:hover { background: #00cc6a; }
+        #status { color: #888; font-size: 0.9em; margin-top: 10px;}
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <h2>Steering Sensor</h2>
+        <div class="wheel-container" id="wheel">
+            <div class="wheel-line"></div>
+        </div>
+        <h1 id="angleDisplay">0.0°</h1>
+        
+        <button onclick="connectBLE()">Connetti Bluetooth</button>
+        <button onclick="setTare()">Tara (Zero)</button>
+        <div id="status">Disconnesso</div>
+    </div>
+
+    <script>
+        let bluetoothDevice;
+        let characteristic;
+        let tareOffset = 0;
+        let currentRawAngle = 0;
+
+        async function connectBLE() {
+            try {
+                document.getElementById('status').innerText = "Ricerca in corso...";
+                
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'Steering Sensor' }],
+                    optionalServices: [0x181A]
+                });
+
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(0x181A);
+                characteristic = await service.getCharacteristic(0x2A6E);
+                
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', handleData);
+                
+                document.getElementById('status').innerText = "Connesso! " + bluetoothDevice.name;
+            } catch (error) {
+                console.error(error);
+                document.getElementById('status').innerText = "Errore: " + error;
+            }
+        }
+
+        function handleData(event) {
+            const data = event.target.value;
+            // Legge il valore Int16 (Little Endian) e lo divide per 100
+            currentRawAngle = data.getInt16(0, true) / 100.0;
+            
+            // Applica la tara
+            let displayAngle = currentRawAngle - tareOffset;
+            
+            // Aggiorna il testo e ruota il volante grafico
+            document.getElementById('angleDisplay').innerText = displayAngle.toFixed(1) + "°";
+            document.getElementById('wheel').style.transform = `rotate(${displayAngle}deg)`;
+        }
+
+        function setTare() {
+            tareOffset = currentRawAngle;
+        }
+    </script>
+
+</body>
+</html>
