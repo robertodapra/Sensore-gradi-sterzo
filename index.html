@@ -1,48 +1,724 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <title>FAST STEER</title>
-    <style>
-        body { background: #000; color: #0f0; font-family: monospace; text-align: center; overflow: hidden; }
-        #wheel { width: 300px; height: 300px; border: 10px solid #0f0; border-radius: 50%; margin: 50px auto; position: relative; transition: transform 0.02s linear; }
-        #marker { width: 10px; height: 50px; background: #f00; position: absolute; top: 0; left: 145px; }
-        h1 { font-size: 80px; margin: 0; }
-        button { padding: 20px; font-size: 20px; background: #0f0; border: none; cursor: pointer; font-weight: bold; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steer Sensor — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0a0a0b;
+    --panel:    #111114;
+    --border:   #1e1e24;
+    --accent:   #e8ff00;
+    --accent2:  #ff4444;
+    --text:     #c8c8d0;
+    --textdim:  #55555f;
+    --mono:     'Share Tech Mono', monospace;
+    --display:  'Rajdhani', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--display);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    width: 100%;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+  }
+
+  .logo {
+    font-size: 13px;
+    font-family: var(--mono);
+    color: var(--textdim);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .logo span {
+    color: var(--accent);
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--textdim);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--textdim);
+    transition: background 0.3s;
+  }
+  .dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .dot.error     { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+
+  main {
+    width: 100%;
+    max-width: 960px;
+    padding: 40px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 20px;
+  }
+
+  /* STEERING WHEEL — occupa colonna sinistra su 2 righe */
+  .wheel-panel {
+    grid-row: 1 / 3;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .wheel-panel::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .wheel-panel.active::after { opacity: 1; }
+
+  .wheel-container {
+    position: relative;
+    width: 280px;
+    height: 280px;
+  }
+
+  #steering-wheel {
+    width: 100%;
+    height: 100%;
+    transition: transform 0.05s linear;
+    filter: drop-shadow(0 0 20px rgba(232,255,0,0.08));
+  }
+
+  .center-dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .wheel-panel.active .center-dot { opacity: 1; }
+
+  .angle-display {
+    margin-top: 36px;
+    text-align: center;
+  }
+
+  .angle-value {
+    font-size: 72px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--accent);
+    line-height: 1;
+    letter-spacing: -2px;
+    text-shadow: 0 0 30px rgba(232,255,0,0.3);
+    transition: color 0.2s;
+  }
+
+  .angle-unit {
+    font-size: 20px;
+    color: var(--textdim);
+    font-family: var(--mono);
+    margin-left: 4px;
+  }
+
+  .angle-dir {
+    margin-top: 8px;
+    font-size: 12px;
+    font-family: var(--mono);
+    letter-spacing: 0.3em;
+    color: var(--textdim);
+    text-transform: uppercase;
+    height: 16px;
+  }
+
+  /* PANNELLO DATI */
+  .data-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 24px;
+  }
+
+  .panel-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    letter-spacing: 0.3em;
+    color: var(--textdim);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .data-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  .data-row:last-child { border-bottom: none; }
+
+  .data-key {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--textdim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .data-val {
+    font-size: 15px;
+    font-family: var(--mono);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .data-val.highlight { color: var(--accent); }
+  .data-val.danger    { color: var(--accent2); }
+
+  /* BARRA STERZO */
+  .steer-bar-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 24px;
+  }
+
+  .bar-track {
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    position: relative;
+    margin: 20px 0 12px;
+  }
+
+  .bar-center {
+    position: absolute;
+    left: 50%; top: -4px;
+    width: 2px; height: 14px;
+    background: var(--textdim);
+    transform: translateX(-50%);
+  }
+
+  .bar-fill {
+    position: absolute;
+    top: 0; height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: all 0.05s linear;
+    box-shadow: 0 0 8px rgba(232,255,0,0.4);
+  }
+
+  .bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--textdim);
+  }
+
+  /* PULSANTE CONNETTI */
+  .connect-area {
+    width: 100%;
+    max-width: 960px;
+    padding: 0 24px 40px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .btn {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 14px 32px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.2s;
+    z-index: -1;
+  }
+
+  .btn:hover { color: var(--bg); }
+  .btn:hover::before { transform: scaleX(1); }
+
+  .btn:disabled {
+    border-color: var(--border);
+    color: var(--textdim);
+    cursor: not-allowed;
+  }
+  .btn:disabled::before { display: none; }
+
+  .btn.danger {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+  .btn.danger::before { background: var(--accent2); }
+
+  .btn-reset {
+    border-color: var(--textdim);
+    color: var(--textdim);
+  }
+  .btn-reset::before { background: var(--textdim); }
+  .btn-reset:hover { color: var(--bg); }
+
+  /* LOG */
+  .log-panel {
+    width: 100%;
+    max-width: 960px;
+    padding: 0 24px 40px;
+  }
+
+  .log-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--textdim);
+    height: 80px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+
+  .log-line { margin: 1px 0; }
+  .log-line.ok  { color: var(--accent); }
+  .log-line.err { color: var(--accent2); }
+  .log-line.info { color: #6688aa; }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+    }
+    .wheel-panel { grid-row: auto; }
+    .angle-value { font-size: 54px; }
+    .wheel-container { width: 220px; height: 220px; }
+  }
+
+  /* Pulse animation on data receive */
+  @keyframes pulse {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.6; }
+    100% { opacity: 1; }
+  }
+  .receiving .angle-value {
+    animation: pulse 0.15s ease;
+  }
+</style>
 </head>
 <body>
-    <div id="wheel"><div id="marker"></div></div>
-    <h1 id="val">0.0°</h1>
-    <button onclick="conn()">CONNETTI VOLANTE</button>
-    <p id="stat">DISCONNESSO</p>
 
-    <script>
-        let tare = 0;
-        let lastRaw = 0;
+<header>
+  <div class="logo">Steer<span>Sensor</span> — BNO085</div>
+  <div class="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">DISCONNESSO</span>
+  </div>
+</header>
 
-        async function conn() {
-            try {
-                const dev = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'Steering_Fast' }],
-                    optionalServices: [0x181A]
-                });
-                const server = await dev.gatt.connect();
-                const service = await server.getPrimaryService(0x181A);
-                const char = await service.getCharacteristic(0x2A6E);
-                
-                await char.startNotifications();
-                char.addEventListener('characteristicvaluechanged', e => {
-                    let v = e.target.value.getInt16(0, true) / 100;
-                    lastRaw = v;
-                    let final = v - tare;
-                    document.getElementById('val').innerText = final.toFixed(1) + "°";
-                    document.getElementById('wheel').style.transform = `rotate(${final}deg)`;
-                });
-                document.getElementById('stat').innerText = "CONNESSO";
-            } catch (err) { alert(err); }
-        }
-        
-        window.addEventListener('keydown', e => { if(e.code === 'Space') tare = lastRaw; });
-    </script>
+<main>
+
+  <!-- VOLANTE -->
+  <div class="wheel-panel" id="wheel-panel">
+    <div class="wheel-container">
+      <svg id="steering-wheel" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <!-- Cerchio esterno -->
+        <circle cx="100" cy="100" r="90" fill="none" stroke="#2a2a30" stroke-width="14"/>
+        <circle cx="100" cy="100" r="90" fill="none" stroke="#3a3a42" stroke-width="10"/>
+
+        <!-- Razze -->
+        <!-- Razza sinistra -->
+        <path d="M 100 100 L 22 100" stroke="#3a3a42" stroke-width="10" stroke-linecap="round"/>
+        <!-- Razza destra -->
+        <path d="M 100 100 L 178 100" stroke="#3a3a42" stroke-width="10" stroke-linecap="round"/>
+        <!-- Razza alto-sinistra -->
+        <path d="M 100 100 L 46 36" stroke="#3a3a42" stroke-width="10" stroke-linecap="round"/>
+        <!-- Razza alto-destra -->
+        <path d="M 100 100 L 154 36" stroke="#3a3a42" stroke-width="10" stroke-linecap="round"/>
+
+        <!-- Hub centrale -->
+        <circle cx="100" cy="100" r="22" fill="#1a1a1e" stroke="#3a3a42" stroke-width="2"/>
+        <circle cx="100" cy="100" r="14" fill="#222226"/>
+
+        <!-- Marker top (indicatore posizione) -->
+        <rect x="95" y="8" width="10" height="18" rx="5" fill="#e8ff00" opacity="0.9"/>
+
+        <!-- Grip texture (tacche sul cerchio esterno) -->
+        <g stroke="#2e2e36" stroke-width="2">
+          <line x1="100" y1="10" x2="100" y2="18"/>
+          <line x1="100" y1="182" x2="100" y2="190"/>
+          <line x1="10" y1="100" x2="18" y2="100"/>
+          <line x1="182" y1="100" x2="190" y2="100"/>
+        </g>
+      </svg>
+      <div class="center-dot"></div>
+    </div>
+
+    <div class="angle-display">
+      <div class="angle-value" id="angle-display">---<span class="angle-unit">°</span></div>
+      <div class="angle-dir" id="angle-dir">IN ATTESA</div>
+    </div>
+  </div>
+
+  <!-- DATI TELEMETRIA -->
+  <div class="data-panel">
+    <div class="panel-label">Telemetria</div>
+    <div class="data-row">
+      <span class="data-key">Angolo grezzo</span>
+      <span class="data-val highlight" id="val-raw">---°</span>
+    </div>
+    <div class="data-row">
+      <span class="data-key">Angolo max</span>
+      <span class="data-val" id="val-max">---°</span>
+    </div>
+    <div class="data-row">
+      <span class="data-key">Angolo min</span>
+      <span class="data-val" id="val-min">---°</span>
+    </div>
+    <div class="data-row">
+      <span class="data-key">Frequenza</span>
+      <span class="data-val" id="val-hz">--- Hz</span>
+    </div>
+    <div class="data-row">
+      <span class="data-key">Pacchetti ricevuti</span>
+      <span class="data-val" id="val-packets">0</span>
+    </div>
+    <div class="data-row">
+      <span class="data-key">Segnale BLE</span>
+      <span class="data-val" id="val-ble">---</span>
+    </div>
+  </div>
+
+  <!-- BARRA VISUALE -->
+  <div class="steer-bar-panel">
+    <div class="panel-label">Posizione sterzo</div>
+    <div class="bar-track">
+      <div class="bar-center"></div>
+      <div class="bar-fill" id="bar-fill" style="left:50%; width:0%"></div>
+    </div>
+    <div class="bar-labels">
+      <span>← SX 540°</span>
+      <span>CENTRO</span>
+      <span>DX 540° →</span>
+    </div>
+  </div>
+
+</main>
+
+<!-- PULSANTI -->
+<div class="connect-area">
+  <button class="btn" id="btn-connect" onclick="connectBLE()">
+    ⬡ Connetti BLE
+  </button>
+  <button class="btn btn-reset" id="btn-reset" onclick="resetZero()" disabled>
+    ↺ Reset 0°
+  </button>
+  <button class="btn danger" id="btn-disconnect" onclick="disconnectBLE()" disabled>
+    ✕ Disconnetti
+  </button>
+</div>
+
+<!-- LOG -->
+<div class="log-panel">
+  <div class="log-box" id="log-box"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIG (deve corrispondere a config.h)
+// ─────────────────────────────────────────────
+const BLE_DEVICE_NAME   = 'SteerSensor-BNO';
+const BLE_SERVICE_UUID  = '12345678-1234-1234-1234-123456789abc';
+const BLE_CHAR_UUID     = '12345678-1234-1234-1234-123456789abd';
+const MAX_ANGLE         = 540;  // ±540° = 1.5 giri per lato
+
+// ─────────────────────────────────────────────
+// STATO
+// ─────────────────────────────────────────────
+let device = null;
+let server = null;
+let characteristic = null;
+let isConnected = false;
+let angleOffset = 0;
+let maxAngle = 0;
+let minAngle = 0;
+let packetCount = 0;
+let lastPacketTime = Date.now();
+let hzBuffer = [];
+let currentAngle = 0;
+
+// ─────────────────────────────────────────────
+// LOG
+// ─────────────────────────────────────────────
+function log(msg, type = 'info') {
+  const box = document.getElementById('log-box');
+  const line = document.createElement('div');
+  const ts = new Date().toTimeString().slice(0,8);
+  line.className = `log-line ${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  // max 50 righe
+  while (box.children.length > 50) box.removeChild(box.firstChild);
+}
+
+// ─────────────────────────────────────────────
+// CONNESSIONE BLE
+// ─────────────────────────────────────────────
+async function connectBLE() {
+  if (!navigator.bluetooth) {
+    log('Web Bluetooth non supportato. Usa Chrome su desktop o Android.', 'err');
+    alert('Web Bluetooth non supportato.\nUsa Google Chrome su PC o Android.\nNon funziona su Firefox o Safari iOS.');
+    return;
+  }
+
+  try {
+    log('Ricerca dispositivo BLE...', 'info');
+    setStatus('connecting');
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: BLE_DEVICE_NAME }],
+      optionalServices: [BLE_SERVICE_UUID]
+    });
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    log(`Trovato: ${device.name}`, 'ok');
+
+    server = await device.gatt.connect();
+    log('GATT connesso', 'ok');
+
+    const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+    characteristic = await service.getCharacteristic(BLE_CHAR_UUID);
+
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', onAngleData);
+
+    isConnected = true;
+    setStatus('connected');
+    log('Ricezione dati attiva ✓', 'ok');
+
+    document.getElementById('btn-connect').disabled = true;
+    document.getElementById('btn-reset').disabled = false;
+    document.getElementById('btn-disconnect').disabled = false;
+
+  } catch (err) {
+    log(`Errore: ${err.message}`, 'err');
+    setStatus('error');
+    if (err.name !== 'NotFoundError') {
+      setTimeout(() => setStatus('disconnected'), 3000);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// DATI IN ARRIVO
+// ─────────────────────────────────────────────
+function onAngleData(event) {
+  const dataView = event.target.value;
+  
+  // float32 little-endian (come da firmware)
+  const rawAngle = -dataView.getFloat32(0, true);
+  currentAngle = rawAngle - angleOffset;
+
+  // Hz
+  const now = Date.now();
+  const dt = now - lastPacketTime;
+  lastPacketTime = now;
+  hzBuffer.push(dt);
+  if (hzBuffer.length > 20) hzBuffer.shift();
+  const avgDt = hzBuffer.reduce((a,b) => a+b, 0) / hzBuffer.length;
+  const hz = (1000 / avgDt).toFixed(0);
+
+  // Max/min
+  if (currentAngle > maxAngle) maxAngle = currentAngle;
+  if (currentAngle < minAngle) minAngle = currentAngle;
+  packetCount++;
+
+  updateUI(currentAngle, hz);
+}
+
+// ─────────────────────────────────────────────
+// AGGIORNAMENTO UI
+// ─────────────────────────────────────────────
+function updateUI(angle, hz) {
+  // Volante
+  const wheel = document.getElementById('steering-wheel');
+  wheel.style.transform = `rotate(${angle}deg)`;
+
+  // Valore numerico
+  const display = document.getElementById('angle-display');
+  const sign = angle > 0.5 ? '+' : '';
+  display.innerHTML = `${sign}${angle.toFixed(1)}<span class="angle-unit">°</span>`;
+
+  // Direzione
+  const dir = document.getElementById('angle-dir');
+  if (Math.abs(angle) < 2)       dir.textContent = '— CENTRO —';
+  else if (angle > 0)             dir.textContent = '▶ DESTRA';
+  else                            dir.textContent = '◀ SINISTRA';
+
+  // Barra
+  const bar = document.getElementById('bar-fill');
+  const pct = Math.min(Math.abs(angle) / MAX_ANGLE * 50, 50);
+  if (angle >= 0) {
+    bar.style.left  = '50%';
+    bar.style.width = pct + '%';
+  } else {
+    bar.style.left  = (50 - pct) + '%';
+    bar.style.width = pct + '%';
+  }
+  // Colore barra: giallo → rosso quando vicino al limite
+  const intensity = Math.abs(angle) / MAX_ANGLE;
+  if (intensity > 0.8) {
+    bar.style.background = '#ff4444';
+    bar.style.boxShadow = '0 0 8px rgba(255,68,68,0.5)';
+  } else {
+    bar.style.background = 'var(--accent)';
+    bar.style.boxShadow = '0 0 8px rgba(232,255,0,0.4)';
+  }
+
+  // Telemetria
+  document.getElementById('val-raw').textContent     = `${angle.toFixed(2)}°`;
+  document.getElementById('val-max').textContent     = `+${maxAngle.toFixed(1)}°`;
+  document.getElementById('val-min').textContent     = `${minAngle.toFixed(1)}°`;
+  document.getElementById('val-hz').textContent      = `${hz} Hz`;
+  document.getElementById('val-packets').textContent = packetCount;
+  document.getElementById('val-ble').textContent     = 'Attivo ✓';
+
+  // Panel active
+  document.getElementById('wheel-panel').classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+// RESET ZERO
+// ─────────────────────────────────────────────
+function resetZero() {
+  angleOffset += currentAngle;
+  maxAngle = 0;
+  minAngle = 0;
+  log('Zero resettato', 'ok');
+}
+
+// ─────────────────────────────────────────────
+// DISCONNESSIONE
+// ─────────────────────────────────────────────
+async function disconnectBLE() {
+  if (device && device.gatt.connected) {
+    await device.gatt.disconnect();
+  }
+  onDisconnected();
+}
+
+function onDisconnected() {
+  isConnected = false;
+  device = null;
+  setStatus('disconnected');
+  log('Disconnesso', 'err');
+  document.getElementById('btn-connect').disabled = false;
+  document.getElementById('btn-reset').disabled = true;
+  document.getElementById('btn-disconnect').disabled = true;
+  document.getElementById('wheel-panel').classList.remove('active');
+  document.getElementById('val-ble').textContent = '---';
+  document.getElementById('angle-dir').textContent = 'IN ATTESA';
+}
+
+// ─────────────────────────────────────────────
+// STATUS
+// ─────────────────────────────────────────────
+function setStatus(state) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  dot.className = 'dot';
+  switch(state) {
+    case 'connected':
+      dot.classList.add('connected');
+      text.textContent = 'CONNESSO';
+      break;
+    case 'connecting':
+      text.textContent = 'CONNESSIONE...';
+      break;
+    case 'error':
+      dot.classList.add('error');
+      text.textContent = 'ERRORE';
+      break;
+    default:
+      text.textContent = 'DISCONNESSO';
+  }
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+log('Dashboard pronta. Clicca "Connetti BLE" per iniziare.', 'ok');
+log('Richiede: Chrome su PC o Android. Non funziona su Firefox/Safari iOS.', 'info');
+</script>
 </body>
 </html>
