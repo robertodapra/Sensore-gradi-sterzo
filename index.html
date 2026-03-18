@@ -132,7 +132,6 @@
   #steering-wheel {
     width: 100%;
     height: 100%;
-    transition: transform 0.05s linear;
     filter: drop-shadow(0 0 20px rgba(232,255,0,0.08));
   }
 
@@ -516,6 +515,41 @@ let lastPacketTime = Date.now();
 let hzBuffer = [];
 let currentAngle = 0;
 
+// Interpolazione fluida
+let displayAngle = 0;      // angolo attualmente visualizzato (interpolato)
+let targetAngle  = 0;      // angolo target (ultimo ricevuto via BLE)
+const LERP_SPEED = 0.18;   // 0.0 = lentissimo, 1.0 = istantaneo
+
+function animationLoop() {
+  // Lerp verso il target
+  displayAngle += (targetAngle - displayAngle) * LERP_SPEED;
+
+  // Aggiorna solo il volante e la barra ogni frame (60fps)
+  const wheel = document.getElementById('steering-wheel');
+  wheel.style.transform = `rotate(${displayAngle}deg)`;
+
+  const bar = document.getElementById('bar-fill');
+  const pct = Math.min(Math.abs(displayAngle) / MAX_ANGLE * 50, 50);
+  if (displayAngle >= 0) {
+    bar.style.left  = '50%';
+    bar.style.width = pct + '%';
+  } else {
+    bar.style.left  = (50 - pct) + '%';
+    bar.style.width = pct + '%';
+  }
+  const intensity = Math.abs(displayAngle) / MAX_ANGLE;
+  if (intensity > 0.8) {
+    bar.style.background = '#ff4444';
+    bar.style.boxShadow = '0 0 8px rgba(255,68,68,0.5)';
+  } else {
+    bar.style.background = 'var(--accent)';
+    bar.style.boxShadow = '0 0 8px rgba(232,255,0,0.4)';
+  }
+
+  requestAnimationFrame(animationLoop);
+}
+requestAnimationFrame(animationLoop);
+
 // ─────────────────────────────────────────────
 // LOG
 // ─────────────────────────────────────────────
@@ -610,9 +644,8 @@ function onAngleData(event) {
 // AGGIORNAMENTO UI
 // ─────────────────────────────────────────────
 function updateUI(angle, hz) {
-  // Volante
-  const wheel = document.getElementById('steering-wheel');
-  wheel.style.transform = `rotate(${angle}deg)`;
+  // Imposta target per l'interpolazione (il loop rAF aggiorna volante e barra)
+  targetAngle = angle;
 
   // Valore numerico
   const display = document.getElementById('angle-display');
@@ -624,26 +657,6 @@ function updateUI(angle, hz) {
   if (Math.abs(angle) < 2)       dir.textContent = '— CENTRO —';
   else if (angle > 0)             dir.textContent = '▶ DESTRA';
   else                            dir.textContent = '◀ SINISTRA';
-
-  // Barra
-  const bar = document.getElementById('bar-fill');
-  const pct = Math.min(Math.abs(angle) / MAX_ANGLE * 50, 50);
-  if (angle >= 0) {
-    bar.style.left  = '50%';
-    bar.style.width = pct + '%';
-  } else {
-    bar.style.left  = (50 - pct) + '%';
-    bar.style.width = pct + '%';
-  }
-  // Colore barra: giallo → rosso quando vicino al limite
-  const intensity = Math.abs(angle) / MAX_ANGLE;
-  if (intensity > 0.8) {
-    bar.style.background = '#ff4444';
-    bar.style.boxShadow = '0 0 8px rgba(255,68,68,0.5)';
-  } else {
-    bar.style.background = 'var(--accent)';
-    bar.style.boxShadow = '0 0 8px rgba(232,255,0,0.4)';
-  }
 
   // Telemetria
   document.getElementById('val-raw').textContent     = `${angle.toFixed(2)}°`;
